@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS coupons (
   used_count INT UNSIGNED NOT NULL DEFAULT 0,
   expires_at DATETIME DEFAULT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  is_universal TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_coupons_code (code),
   INDEX idx_coupons_active (is_active)

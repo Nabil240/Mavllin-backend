@@ -46,6 +46,10 @@ Every feature from the Survey phase appears here with its assigned milestone:
 | 19 | Payment Status Update Email Notification | Trigger customer confirmation email when payment status becomes 'paid', 'done', or 'payment successful' | M3 | ORIGINAL_REQUEST R10 |
 | 20 | Order Status Transition Email Notification | Trigger customer notification email on order status changes (confirmed, shipped, dispatch, delivered, cancelled) | M3 | ORIGINAL_REQUEST R10 |
 | 21 | Master Automated Test Suites & Quality Gate | Comprehensive unit, integration, adversarial challenger, and E2E test suites with verify-mavllin.sh | M4 | ORIGINAL_REQUEST AC |
+| 22 | Backend Coupon Validation Auth Enforcement | Enforce authenticate middleware on /validate and controller-level auth check returning HTTP 401 | M5 | ORIGINAL_REQUEST 2026-11-08 |
+| 23 | Backend Order Guest Coupon Rejection | Reject unauthenticated coupon applications in placeGuestOrder/checkoutOrder with HTTP 400/401 while preserving legit guest checkout | M5 | ORIGINAL_REQUEST 2026-11-08 |
+| 24 | Frontend Checkout Guest Coupon Restrictions & Banner | Render guest login/register prompt banner, disable coupon inputs, guard validateCoupon/quickApplyCoupon, force null coupon in guest orders | M5 | ORIGINAL_REQUEST 2026-11-08 |
+| 25 | Automated Testing & Forensic Verification | Frontend component spec tests, backend coupon auth tests, adversarial testing, and forensic audit | M5 | ORIGINAL_REQUEST 2026-11-08 |
 
 ---
 
@@ -56,6 +60,7 @@ Every feature from the Survey phase appears here with its assigned milestone:
 | M2 | Unified AI Messaging & N8N Automation | Features 11-16: Mavllin AI Brain.md, messaging adapters & schema, AI automation engine, admin messages UI, N8N order webhook dispatcher with DeepSeek WhatsApp notification | M1 | DONE |
 | M3 | Storefront Popups & Email Notifications | Features 17-20: Modular MailService with mock queue, order confirmation email, promotional popup with 24h cooldown, payment & order status change notification emails | M1 | DONE |
 | M4 | Comprehensive Testing & Final Verification | Feature 21: End-to-end integration test suites, adversarial challenger suites, verify-mavllin.sh quality gate, and independent forensic audit | M1, M2, M3 | DONE |
+| M5 | Guest Coupon Restriction & Login Prompt | Features 22-25: Backend coupon/order auth enforcement, frontend checkout UI prompt banner, guest coupon blocking, comprehensive test suites, and forensic audit | M1, M4 | DONE |
 
 ---
 
@@ -116,6 +121,30 @@ Every feature from the Survey phase appears here with its assigned milestone:
 - `MailService.sendPaymentStatusEmail(order, paymentStatus)`: Sends payment confirmation email when status is 'paid'/'done'.
 - `MailService.sendOrderStatusEmail(order, previousStatus, newStatus)`: Sends status transition email with courier details.
 - Testing: When `SMTP_MOCK=true` or `NODE_ENV === 'test'`, captures sent mail in `MailService.sentEmails[]`.
+
+### 4. Coupon Authentication & Guest Restrictions (M5)
+#### Coupon Validation (`POST /api/v1/coupons/validate`)
+- Headers: `Authorization: Bearer <CUSTOMER_JWT_TOKEN>` (Mandatory)
+- Middleware: `authenticate`
+- Request: `{ "code": "WELCOME10", "subtotal": 2000 }`
+- Unauthenticated response: HTTP 401 `{ "success": false, "message": "Authentication required" }`
+- Authenticated response: HTTP 200 `{ "success": true, "data": { "code": "WELCOME10", "discount_amount": 200, ... } }`
+
+#### Guest Order Placement (`POST /api/v1/orders/guest` & `POST /api/v1/checkout/orders` [unauthenticated])
+- Unauthenticated requests containing non-empty `coupon_code` or `discount_amount > 0`:
+  - Response: HTTP 400/401 `{ "success": false, "message": "Coupons and promotional discounts are exclusively available to registered customers. Please log in or create an account to apply coupons." }`
+- Legitimate guest order with `coupon_code: null` and `discount_amount: 0`:
+  - Response: HTTP 201 Created `{ "success": true, "data": { "order_number": "...", "discount_amount": 0, "coupon_id": null } }`
+
+#### Frontend Checkout UI Contract (`frontend/src/app/features/storefront/checkout/checkout.component.ts`)
+- State check: `auth.isAuthenticated()` boolean signal
+- Guest State (`!auth.isAuthenticated()`):
+  - Promotional section displays clear alert/banner prompting sign-in or account creation to unlock coupons, linking to `/auth/login` and `/auth/register` with `queryParams: { returnUrl: '/checkout' }`.
+  - Coupon code input `<input id="checkoutCoupon">` has `[disabled]="!auth.isAuthenticated()"` and placeholder `'Log in to apply promo codes'`.
+  - Apply button has `[disabled]="!auth.isAuthenticated() || !couponInput.trim() || submitting()"`.
+  - Quick-apply buttons are disabled or guarded.
+  - Calling `validateCoupon()` or `quickApplyCoupon()` produces toast error: `'Please log in or create an account to unlock and apply coupon discounts.'`.
+  - `placeGuestOrder()` always submits `coupon_code: null` and `appliedCoupon.set(null)`.
 
 ---
 

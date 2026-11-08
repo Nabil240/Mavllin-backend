@@ -66,19 +66,20 @@ const CouponModel = {
       usage_limit = null,
       expires_at = null,
       is_active = 1,
+      is_universal = 0,
     } = data;
 
     const [result] = await pool.query(
-      `INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, usage_limit, expires_at, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [code.toUpperCase().trim(), discount_type, discount_value, min_order_amount, usage_limit, expires_at, is_active]
+      `INSERT INTO coupons (code, discount_type, discount_value, min_order_amount, usage_limit, expires_at, is_active, is_universal)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [code.toUpperCase().trim(), discount_type, discount_value, min_order_amount, usage_limit, expires_at, is_active, is_universal ? 1 : 0]
     );
 
     return this.findById(result.insertId);
   },
 
   async update(id, fields) {
-    const allowed = ['code', 'discount_type', 'discount_value', 'min_order_amount', 'usage_limit', 'expires_at', 'is_active'];
+    const allowed = ['code', 'discount_type', 'discount_value', 'min_order_amount', 'usage_limit', 'expires_at', 'is_active', 'is_universal'];
     const updates = [];
     const values = [];
 
@@ -87,6 +88,9 @@ const CouponModel = {
         if (key === 'code') {
           updates.push(`${key} = ?`);
           values.push(fields[key].toUpperCase().trim());
+        } else if (key === 'is_universal') {
+          updates.push(`${key} = ?`);
+          values.push(fields[key] ? 1 : 0);
         } else {
           updates.push(`${key} = ?`);
           values.push(fields[key]);
@@ -109,6 +113,157 @@ const CouponModel = {
   async incrementUsage(id, connection = null) {
     const db = connection || pool;
     await db.query('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?', [id]);
+  },
+
+  async getAnalytics() {
+    // 1. Overall high-level statistics
+    const [overallRows] = await pool.query(`
+      SELECT 
+        COUNT(o.id) AS total_redemptions,
+        COUNT(DISTINCT o.user_id) AS unique_members_count,
+        COUNT(DISTINCT c.id) AS unique_coupons_count,
+        COALESCE(SUM(o.discount_amount), 0) AS total_discount_granted,
+        COALESCE(SUM(o.total_amount), 0) AS total_order_volume
+      FROM orders o
+      JOIN coupons c ON c.id = o.coupon_id
+      WHERE o.coupon_id IS NOT NULL
+    `);
+
+    // 2. Performance breakdown per coupon
+    const [byCouponRows] = await pool.query(`
+      SELECT 
+        c.id AS coupon_id,
+        c.code,
+        c.discount_type,
+        c.discount_value,
+        c.min_order_amount,
+        c.usage_limit,
+        c.used_count AS recorded_used_count,
+        c.is_active,
+        c.is_universal,
+        COUNT(o.id) AS actual_usage_count,
+        COUNT(DISTINCT o.user_id) AS unique_members_count,
+        COALESCE(SUM(o.discount_amount), 0) AS total_discount_amount,
+        COALESCE(SUM(o.total_amount), 0) AS total_order_sales
+      FROM coupons c
+      LEFT JOIN orders o ON o.coupon_id = c.id
+      GROUP BY c.id, c.code, c.discount_type, c.discount_value, c.min_order_amount, c.usage_limit, c.used_count, c.is_active, c.is_universal
+      ORDER BY actual_usage_count DESC, c.created_at DESC
+    `);
+
+    // 3. Member-level summary: which member used how many coupons and total times
+    const [byMemberRows] = await pool.query(`
+      SELECT 
+        u.id AS user_id,
+        u.full_name AS customer_name,
+        u.email AS customer_email,
+        u.phone AS customer_phone,
+        COUNT(o.id) AS total_orders_with_coupons,
+        COUNT(DISTINCT c.id) AS distinct_coupons_count,
+        GROUP_CONCAT(DISTINCT c.code ORDER BY c.code SEPARATOR ', ') AS coupon_codes_used,
+        COALESCE(SUM(o.discount_amount), 0) AS total_discount_saved,
+        MAX(o.created_at) AS last_used_at
+      FROM orders o
+      JOIN coupons c ON c.id = o.coupon_id
+      JOIN users u ON u.id = o.user_id
+      WHERE o.coupon_id IS NOT NULL
+      GROUP BY u.id, u.full_name, u.email, u.phone
+      ORDER BY total_orders_with_coupons DESC, total_discount_saved DESC
+    `);
+
+    return {
+      overview: {
+        total_redemptions: Number(overallRows[0]?.total_redemptions || 0),
+        unique_members_count: Number(overallRows[0]?.unique_members_count || 0),
+        unique_coupons_count: Number(overallRows[0]?.unique_coupons_count || 0),
+        total_discount_granted: Number(overallRows[0]?.total_discount_granted || 0),
+        total_order_volume: Number(overallRows[0]?.total_order_volume || 0),
+      },
+      coupons: byCouponRows.map(c => ({
+        ...c,
+        actual_usage_count: Number(c.actual_usage_count),
+        unique_members_count: Number(c.unique_members_count),
+        total_discount_amount: Number(c.total_discount_amount),
+        total_order_sales: Number(c.total_order_sales),
+      })),
+      members: byMemberRows.map(m => ({
+        ...m,
+        total_orders_with_coupons: Number(m.total_orders_with_coupons),
+        distinct_coupons_count: Number(m.distinct_coupons_count),
+        total_discount_saved: Number(m.total_discount_saved),
+      })),
+    };
+  },
+
+  async getMemberUsageLedger({ search = null, couponCode = null, limit = 50, offset = 0 } = {}) {
+    const conditions = ['o.coupon_id IS NOT NULL'];
+    const values = [];
+
+    if (couponCode) {
+      conditions.push('UPPER(c.code) = UPPER(?)');
+      values.push(couponCode.trim());
+    }
+
+    if (search) {
+      conditions.push('(u.full_name LIKE ? OR u.email LIKE ? OR o.order_number LIKE ?)');
+      const term = `%${search.trim()}%`;
+      values.push(term, term, term);
+    }
+
+    const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+    const [countRows] = await pool.query(
+      `SELECT COUNT(o.id) AS total
+       FROM orders o
+       JOIN coupons c ON c.id = o.coupon_id
+       LEFT JOIN users u ON u.id = o.user_id
+       ${whereClause}`,
+      values
+    );
+
+    const limitVal = Math.max(1, Number(limit) || 50);
+    const offsetVal = Math.max(0, Number(offset) || 0);
+
+    const [rows] = await pool.query(
+      `SELECT 
+         o.id AS order_id,
+         o.order_number,
+         o.user_id,
+         COALESCE(u.full_name, 'Guest Customer') AS customer_name,
+         COALESCE(u.email, o.guest_email) AS customer_email,
+         COALESCE(u.phone, o.guest_phone) AS customer_phone,
+         c.id AS coupon_id,
+         c.code AS coupon_code,
+         c.discount_type,
+         c.discount_value,
+         o.subtotal,
+         o.discount_amount,
+         o.shipping_fee,
+         o.total_amount,
+         o.status AS order_status,
+         o.payment_status,
+         o.created_at AS redeemed_at
+       FROM orders o
+       JOIN coupons c ON c.id = o.coupon_id
+       LEFT JOIN users u ON u.id = o.user_id
+       ${whereClause}
+       ORDER BY o.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...values, limitVal, offsetVal]
+    );
+
+    return {
+      total: countRows[0]?.total || 0,
+      limit: limitVal,
+      offset: offsetVal,
+      redemptions: rows.map(r => ({
+        ...r,
+        subtotal: Number(r.subtotal),
+        discount_amount: Number(r.discount_amount),
+        shipping_fee: Number(r.shipping_fee),
+        total_amount: Number(r.total_amount),
+      })),
+    };
   },
 
   calculateDiscount(coupon, subtotal) {

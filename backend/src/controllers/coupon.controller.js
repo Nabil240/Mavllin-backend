@@ -15,6 +15,14 @@ const CouponController = {
       return sendError(res, { statusCode: 404, message: 'Invalid coupon code' });
     }
 
+    // Unless the coupon is given universal permission (is_universal === 1), authentication is strictly required
+    if (!coupon.is_universal && (!req.user || !req.user.id)) {
+      return sendError(res, {
+        statusCode: 401,
+        message: 'Authentication required to apply coupon discounts. Please log in or create an account.',
+      });
+    }
+
     const result = CouponModel.calculateDiscount(coupon, subtotal || 0);
     if (!result.valid) {
       return sendError(res, { statusCode: 400, message: result.message });
@@ -28,6 +36,7 @@ const CouponController = {
         discount_value: Number(coupon.discount_value),
         discount_amount: result.discount,
         coupon_id: coupon.id,
+        is_universal: Boolean(coupon.is_universal),
       },
     });
   },
@@ -56,6 +65,33 @@ const CouponController = {
     });
   },
 
+  async getAnalytics(req, res) {
+    const analytics = await CouponModel.getAnalytics();
+    return sendSuccess(res, {
+      message: 'Coupon analytics retrieved successfully',
+      data: analytics,
+    });
+  },
+
+  async getMemberUsage(req, res) {
+    const { search, couponCode, limit = 50, offset = 0 } = req.query;
+    const ledger = await CouponModel.getMemberUsageLedger({
+      search,
+      couponCode,
+      limit: Number(limit) || 50,
+      offset: Number(offset) || 0,
+    });
+    return sendSuccess(res, {
+      message: 'Member coupon redemptions retrieved successfully',
+      data: ledger.redemptions,
+      meta: {
+        total: ledger.total,
+        limit: ledger.limit,
+        offset: ledger.offset,
+      },
+    });
+  },
+
   async getOne(req, res) {
     const { id } = req.params;
     const coupon = await CouponModel.findById(id);
@@ -71,7 +107,7 @@ const CouponController = {
   },
 
   async create(req, res) {
-    const { code, discount_type, discount_value, min_order_amount, usage_limit, expires_at, is_active } = req.body;
+    const { code, discount_type, discount_value, min_order_amount, usage_limit, expires_at, is_active, is_universal } = req.body;
 
     const existing = await CouponModel.findByCode(code);
     if (existing) {
@@ -86,6 +122,7 @@ const CouponController = {
       usage_limit: usage_limit ? Number(usage_limit) : null,
       expires_at: expires_at || null,
       is_active: is_active !== undefined ? Number(is_active) : 1,
+      is_universal: is_universal !== undefined ? Number(is_universal) : 0,
     });
 
     return sendSuccess(res, {
@@ -108,6 +145,9 @@ const CouponController = {
     if (updateData.min_order_amount !== undefined) updateData.min_order_amount = Number(updateData.min_order_amount);
     if (updateData.usage_limit !== undefined) {
       updateData.usage_limit = updateData.usage_limit ? Number(updateData.usage_limit) : null;
+    }
+    if (updateData.is_universal !== undefined) {
+      updateData.is_universal = Number(updateData.is_universal) ? 1 : 0;
     }
 
     if (updateData.code && updateData.code.toUpperCase().trim() !== coupon.code) {

@@ -4,6 +4,8 @@ const AdminController = require('../controllers/admin.controller');
 const OrderController = require('../controllers/order.controller');
 const ProductController = require('../controllers/product.controller');
 const CategoryController = require('../controllers/category.controller');
+const BannerController = require('../controllers/banner.controller');
+const CouponController = require('../controllers/coupon.controller');
 const { authenticate, requireRole } = require('../middlewares/auth.middleware');
 const { validateRequest } = require('../middlewares/validate.middleware');
 const asyncHandler = require('../utils/asyncHandler');
@@ -117,6 +119,28 @@ router.get('/products', (req, res, next) => {
   return asyncHandler(ProductController.getAll)(req, res, next);
 });
 router.get('/categories', asyncHandler(CategoryController.getAll));
+
+// Hero Slides & Banners
+router.get('/banners', asyncHandler(BannerController.getAll));
+router.post(
+  '/banners',
+  [body('title').trim().notEmpty().withMessage('Banner title is required'), validateRequest],
+  asyncHandler(BannerController.create)
+);
+router.put(
+  '/banners/:id',
+  [param('id').isInt().withMessage('Banner ID must be an integer'), validateRequest],
+  asyncHandler(BannerController.update)
+);
+router.delete(
+  '/banners/:id',
+  [param('id').isInt().withMessage('Banner ID must be an integer'), validateRequest],
+  asyncHandler(BannerController.delete)
+);
+
+// Coupons Analytics & Member Tracking
+router.get('/coupons/analytics', asyncHandler(CouponController.getAnalytics));
+router.get('/coupons/member-usage', asyncHandler(CouponController.getMemberUsage));
 
 // GET /api/v1/admin/customers
 router.get('/customers', asyncHandler(AdminController.getCustomers));

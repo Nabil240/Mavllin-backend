@@ -18,7 +18,7 @@ function authenticate(req, res, next) {
   }
 }
 
-function optionalAuthenticate(req, _res, next) {
+function optionalAuthenticate(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return next();
@@ -28,10 +28,10 @@ function optionalAuthenticate(req, _res, next) {
   try {
     const decoded = jwt.verify(token, env.jwt.secret);
     req.user = decoded;
+    return next();
   } catch (_err) {
-    // Ignore invalid token on optional auth
+    return sendError(res, { statusCode: 401, message: 'Invalid or expired token' });
   }
-  return next();
 }
 
 function requireRole(...allowedRoles) {

@@ -364,6 +364,25 @@ const OrderController = {
       return sendError(res, { statusCode: 400, message: 'Order items are required for guest checkout' });
     }
 
+    const cleanCouponCode = typeof coupon_code === 'string' ? coupon_code.trim() : null;
+    const hasDiscountAmount = req.body.discount_amount != null && Number(req.body.discount_amount) > 0;
+    let universalCoupon = null;
+
+    if (cleanCouponCode) {
+      universalCoupon = await CouponModel.findByCode(cleanCouponCode);
+      if (!universalCoupon || !universalCoupon.is_universal) {
+        return sendError(res, {
+          statusCode: 400,
+          message: 'Coupons and promotional discounts are exclusively available to registered customers. Please log in or create an account to apply coupons.',
+        });
+      }
+    } else if (hasDiscountAmount) {
+      return sendError(res, {
+        statusCode: 400,
+        message: 'Coupons and promotional discounts are exclusively available to registered customers. Please log in or create an account to apply coupons.',
+      });
+    }
+
     const cleanPaymentMethod = typeof payment_method === 'string' ? payment_method.trim().toLowerCase().replace(/[\s-]+/g, '_') : null;
     const cleanPaymentProvider = typeof payment_provider === 'string' ? payment_provider.trim().toLowerCase().replace(/[\s-]+/g, '_') : null;
     const rawPaymentInput = cleanPaymentMethod || cleanPaymentProvider || 'cash_on_delivery';
@@ -413,19 +432,13 @@ const OrderController = {
     let discountAmount = 0;
     let couponId = null;
 
-    if (coupon_code) {
-      const coupon = await CouponModel.findByCode(coupon_code);
-      if (coupon) {
-        const couponCheck = CouponModel.calculateDiscount(coupon, subtotal);
-        if (couponCheck.valid) {
-          discountAmount = couponCheck.discount;
-          couponId = coupon.id;
-        } else {
-          return sendError(res, { statusCode: 400, message: couponCheck.message });
-        }
-      } else {
-        return sendError(res, { statusCode: 404, message: 'Invalid coupon code' });
+    if (universalCoupon) {
+      const couponCheck = CouponModel.calculateDiscount(universalCoupon, subtotal);
+      if (!couponCheck.valid) {
+        return sendError(res, { statusCode: 400, message: couponCheck.message });
       }
+      discountAmount = couponCheck.discount;
+      couponId = universalCoupon.id;
     }
 
     const shippingFee = await calculateShippingFee(subtotal, shipping_address);
@@ -524,6 +537,7 @@ const OrderController = {
     if (req.user && req.user.id) {
       return OrderController.placeOrder(req, res);
     }
+
     const { items } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
       return sendError(res, {

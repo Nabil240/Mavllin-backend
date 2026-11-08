@@ -1,15 +1,16 @@
 const express = require('express');
 const { body, param } = require('express-validator');
 const CouponController = require('../controllers/coupon.controller');
-const { authenticate, requireRole } = require('../middlewares/auth.middleware');
+const { authenticate, requireRole, optionalAuthenticate } = require('../middlewares/auth.middleware');
 const { validateRequest } = require('../middlewares/validate.middleware');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
 
-// Validation endpoint (available to customers)
+// Validation endpoint (restricted to registered customers unless coupon has universal permission)
 router.post(
   '/validate',
+  optionalAuthenticate,
   [
     body('code').trim().notEmpty().withMessage('Coupon code is required'),
     body('subtotal').optional().isFloat({ min: 0 }),
@@ -20,6 +21,8 @@ router.post(
 
 // Admin-only management
 router.get('/', authenticate, requireRole('admin'), asyncHandler(CouponController.getAll));
+router.get('/analytics', authenticate, requireRole('admin'), asyncHandler(CouponController.getAnalytics));
+router.get('/member-usage', authenticate, requireRole('admin'), asyncHandler(CouponController.getMemberUsage));
 router.get(
   '/:id',
   authenticate,
