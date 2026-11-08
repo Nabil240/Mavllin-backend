@@ -1,0 +1,304 @@
+<div class="admin-messages-page">
+  <!-- Page Header -->
+  <div class="page-head">
+    <div>
+      <h1 class="section-heading">UNIFIED OMNICHANNEL MESSAGING</h1>
+      <p class="section-subtitle">
+        Centralized Meta messaging (Facebook Messenger &amp; WhatsApp Business) with Mavllin AI Brain concierge
+      </p>
+    </div>
+    <div class="head-actions">
+      <button type="button" class="btn btn-outline btn-sm" (click)="loadConversations()" [disabled]="loadingConversations()">
+        <svg class="icon-refresh" [class.spinning]="loadingConversations()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"></path>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span>Refresh Inbox</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Unified Two-Column Container -->
+  <div class="messaging-container">
+    <!-- LEFT PANEL: Conversation Thread List & Inbox Filters -->
+    <aside class="inbox-panel">
+      <!-- Filter Tabs: All, Facebook, WhatsApp -->
+      <div class="channel-tabs">
+        <button
+          type="button"
+          class="tab-btn"
+          [class.active]="activeChannel() === 'all'"
+          (click)="setChannelFilter('all')"
+        >
+          <span>All Channels</span>
+          @if (unreadCounts().all > 0) {
+            <span class="unread-pill">{{ unreadCounts().all }}</span>
+          }
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn tab-fb"
+          [class.active]="activeChannel() === 'facebook'"
+          (click)="setChannelFilter('facebook')"
+        >
+          <span class="tab-channel-badge fb-badge">FB</span>
+          <span>Messenger</span>
+          @if (unreadCounts().facebook > 0) {
+            <span class="unread-pill">{{ unreadCounts().facebook }}</span>
+          }
+        </button>
+
+        <button
+          type="button"
+          class="tab-btn tab-wa"
+          [class.active]="activeChannel() === 'whatsapp'"
+          (click)="setChannelFilter('whatsapp')"
+        >
+          <span class="tab-channel-badge wa-badge">WA</span>
+          <span>WhatsApp</span>
+          @if (unreadCounts().whatsapp > 0) {
+            <span class="unread-pill">{{ unreadCounts().whatsapp }}</span>
+          }
+        </button>
+      </div>
+
+      <!-- Search Input -->
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          type="text"
+          class="search-input"
+          placeholder="Search customer, phone, or message..."
+          [ngModel]="searchQuery()"
+          (ngModelChange)="searchQuery.set($event)"
+        />
+        @if (searchQuery()) {
+          <button type="button" class="clear-search" (click)="searchQuery.set('')">&times;</button>
+        }
+      </div>
+
+      <!-- Thread List -->
+      <div class="thread-list">
+        @if (loadingConversations() && conversations().length === 0) {
+          <div class="state-box">
+            <span class="loader-spinner"></span>
+            <p>Loading conversations...</p>
+          </div>
+        } @else if (filteredConversations().length === 0) {
+          <div class="state-box empty">
+            <p>No conversations found.</p>
+            <span class="subtext">Incoming Facebook &amp; WhatsApp messages will appear here.</span>
+          </div>
+        } @else {
+          @for (conv of filteredConversations(); track conv.id) {
+            <div
+              class="thread-card"
+              [class.active]="selectedConversation()?.id === conv.id"
+              [class.has-unread]="conv.unread_count > 0"
+              (click)="selectConversation(conv)"
+            >
+              <div class="card-avatar" [class.avatar-fb]="conv.channel === 'facebook'" [class.avatar-wa]="conv.channel === 'whatsapp'">
+                @if (conv.channel === 'facebook') {
+                  <span>FB</span>
+                } @else {
+                  <span>WA</span>
+                }
+              </div>
+
+              <div class="card-main">
+                <div class="card-top-row">
+                  <h4 class="customer-name">
+                    {{ conv.customer_name || 'Atelier Patron' }}
+                  </h4>
+                  <span class="time-stamp">
+                    {{ conv.last_message_at | date:'shortTime' }}
+                  </span>
+                </div>
+
+                <div class="card-sub-row">
+                  <span class="customer-identifier">
+                    {{ conv.customer_phone || conv.external_sender_id || conv.external_user_id || 'Direct Chat' }}
+                  </span>
+                </div>
+
+                <p class="snippet-text">
+                  {{ conv.last_message_text || 'No message preview' }}
+                </p>
+
+                <div class="card-badges">
+                  <!-- AI Status Pill -->
+                  @if (isAiEnabled(conv)) {
+                    <span class="status-pill pill-ai">🤖 AI Auto</span>
+                  } @else {
+                    <span class="status-pill pill-human">👤 Manual Staff</span>
+                  }
+
+                  <!-- Unread Counter -->
+                  @if (conv.unread_count > 0) {
+                    <span class="unread-tag">{{ conv.unread_count }} new</span>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+        }
+      </div>
+    </aside>
+
+    <!-- RIGHT PANEL: Message Viewer, Per-Conversation AI Toggle & Manual Reply Console -->
+    <main class="chat-panel">
+      @if (!selectedConversation()) {
+        <div class="no-selection-box">
+          <div class="icon-chat-empty">💬</div>
+          <h3>Select a Conversation</h3>
+          <p>Choose a customer thread from the left to view message history, toggle AI brain responses, or send a manual reply.</p>
+        </div>
+      } @else {
+        <!-- Chat Header -->
+        <header class="chat-header">
+          <div class="client-meta">
+            <div class="client-channel-icon" [class.fb-color]="selectedConversation()?.channel === 'facebook'" [class.wa-color]="selectedConversation()?.channel === 'whatsapp'">
+              {{ selectedConversation()?.channel === 'facebook' ? 'Facebook Messenger' : 'WhatsApp Business' }}
+            </div>
+            <h2 class="client-title">{{ selectedConversation()?.customer_name || 'Atelier Patron' }}</h2>
+            <span class="client-phone">
+              {{ selectedConversation()?.customer_phone || selectedConversation()?.external_sender_id || selectedConversation()?.external_user_id }}
+            </span>
+          </div>
+
+          <!-- Per-Conversation AI Auto-Reply Switch -->
+          <div class="ai-toggle-wrapper">
+            <div class="ai-label-col">
+              <span class="ai-title">Mavllin AI Brain Auto-Reply</span>
+              <span class="ai-state-text" [class.active]="isAiEnabled(selectedConversation()!)">
+                {{ isAiEnabled(selectedConversation()!) ? 'Active (Automated Concierge)' : 'Paused (Human Agent Takeover)' }}
+              </span>
+            </div>
+            <button
+              type="button"
+              class="switch-btn"
+              [class.switch-on]="isAiEnabled(selectedConversation()!)"
+              [disabled]="togglingAi()"
+              (click)="toggleAi()"
+              [title]="isAiEnabled(selectedConversation()!) ? 'Click to pause AI and takeover manually' : 'Click to enable Mavllin AI automated replies'"
+            >
+              <span class="switch-handle"></span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Message History Stream -->
+        <div class="chat-history" #chatScrollContainer>
+          @if (loadingMessages()) {
+            <div class="chat-loading-box">
+              <span class="loader-spinner"></span>
+              <p>Fetching message history...</p>
+            </div>
+          } @else if (messages().length === 0) {
+            <div class="chat-empty-box">
+              <p>No messages recorded yet in this conversation.</p>
+            </div>
+          } @else {
+            <div class="message-stream">
+              @for (msg of messages(); track msg.id) {
+                <!-- CUSTOMER BUBBLE (Left Aligned) -->
+                @if (msg.sender_type === 'customer') {
+                  <div class="message-row row-customer">
+                    <div class="msg-avatar customer-avatar">👤</div>
+                    <div class="bubble bubble-customer">
+                      <div class="bubble-meta">
+                        <span class="sender-name">{{ selectedConversation()?.customer_name || 'Customer' }}</span>
+                        <span class="bubble-time">{{ msg.created_at | date:'shortTime' }}</span>
+                      </div>
+                      <div class="bubble-body">{{ msg.content }}</div>
+                    </div>
+                  </div>
+                }
+
+                <!-- AI AUTOMATED CONCIERGE BUBBLE (Right Aligned - Lavender/Violet Atelier Theme) -->
+                @else if (msg.sender_type === 'ai' || msg.sender_type === 'bot') {
+                  <div class="message-row row-ai">
+                    <div class="bubble bubble-ai">
+                      <div class="bubble-meta">
+                        <span class="sender-name">🤖 Mavllin AI Brain</span>
+                        <span class="bubble-time">{{ msg.created_at | date:'shortTime' }}</span>
+                      </div>
+                      <div class="bubble-body">{{ msg.content }}</div>
+                      <div class="bubble-footer">
+                        <span class="ai-badge-chip">Automated Response</span>
+                      </div>
+                    </div>
+                    <div class="msg-avatar ai-avatar">✨</div>
+                  </div>
+                }
+
+                <!-- ADMIN STAFF MANUAL REPLY BUBBLE (Right Aligned - Onyx Theme) -->
+                @else {
+                  <div class="message-row row-admin">
+                    <div class="bubble bubble-admin">
+                      <div class="bubble-meta">
+                        <span class="sender-name">👤 Store Staff (Admin)</span>
+                        <span class="bubble-time">{{ msg.created_at | date:'shortTime' }}</span>
+                      </div>
+                      <div class="bubble-body">{{ msg.content }}</div>
+                      <div class="bubble-footer">
+                        <span class="staff-badge-chip">Manual Reply</span>
+                      </div>
+                    </div>
+                    <div class="msg-avatar admin-avatar">👔</div>
+                  </div>
+                }
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Quick Response Macros -->
+        <div class="macros-bar">
+          <span class="macros-label">Quick Macros:</span>
+          <div class="macros-list">
+            @for (m of quickMacros; track m.label) {
+              <button type="button" class="macro-chip" (click)="applyMacro(m)" [title]="m.text">
+                {{ m.label }}
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- Reply Composer Console -->
+        <footer class="chat-composer">
+          <textarea
+            class="composer-textarea"
+            placeholder="Type your manual reply to the customer... (Press Enter to dispatch, Shift+Enter for new line)"
+            rows="2"
+            [ngModel]="replyText()"
+            (ngModelChange)="replyText.set($event)"
+            (keydown)="onKeydown($event)"
+            [disabled]="sendingReply()"
+          ></textarea>
+
+          <button
+            type="button"
+            class="btn btn-primary send-btn"
+            [disabled]="sendingReply() || !replyText().trim()"
+            (click)="sendReply()"
+          >
+            @if (sendingReply()) {
+              <span>Sending...</span>
+            } @else {
+              <span>Send</span>
+              <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            }
+          </button>
+        </footer>
+      }
+    </main>
+  </div>
+</div>

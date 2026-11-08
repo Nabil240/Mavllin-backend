@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750" width="600" height="750">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FAF5F0"/>
+      <stop offset="100%" stop-color="#EFE5DC"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="750" fill="url(#g)"/>
+  <circle cx="300" cy="360" r="210" fill="#E11D48" opacity="0.06"/>
+  <text x="42" y="54" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" letter-spacing="3" fill="#292524" opacity="0.55">ECO STUDIO // CATEGORY</text>
+  <path d="M195 180 L255 148 L300 175 L345 148 L405 180 L460 335 L412 355 L385 245 L385 565 L215 565 L215 245 L188 355 L140 335 Z" fill="#FFFFFF" stroke="#292524" stroke-width="4" stroke-linejoin="round"/>
+            <line x1="300" y1="175" x2="300" y2="565" stroke="#292524" stroke-width="3"/>
+            <rect x="322" y="255" width="42" height="48" rx="3" fill="none" stroke="#292524" stroke-width="2.5" opacity="0.75"/>
+            <circle cx="300" cy="230" r="3.5" fill="#292524"/><circle cx="300" cy="295" r="3.5" fill="#292524"/><circle cx="300" cy="360" r="3.5" fill="#292524"/><circle cx="300" cy="425" r="3.5" fill="#292524"/>
+  <text x="300" y="682" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" letter-spacing="1.5" fill="#292524" opacity="0.85">WOMENSWEAR COLLECTION</text>
+  <text x="300" y="706" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="11" letter-spacing="2.5" fill="#292524" opacity="0.45">SUSTAINABLE ARCHIVE</text>
+</svg>

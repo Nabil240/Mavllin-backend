@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750" width="600" height="750">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F4F4F5"/>
+      <stop offset="100%" stop-color="#D4D4D8"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="750" fill="url(#g)"/>
+  <circle cx="300" cy="360" r="210" fill="#059669" opacity="0.06"/>
+  <text x="42" y="54" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="700" letter-spacing="3" fill="#18181B" opacity="0.55">ECO STUDIO // CATEGORY</text>
+  <path d="M235 155 Q300 105 365 155 L425 195 L475 340 L425 360 L395 255 L395 565 L205 565 L205 255 L175 360 L125 340 L175 195 Z" fill="#52525B" stroke="#18181B" stroke-width="4" stroke-linejoin="round"/>
+             <path d="M245 430 L355 430 L375 525 L225 525 Z" fill="none" stroke="#18181B" stroke-width="3" opacity="0.65"/>
+             <line x1="285" y1="168" x2="285" y2="245" stroke="#059669" stroke-width="3"/><line x1="315" y1="168" x2="315" y2="245" stroke="#059669" stroke-width="3"/>
+  <text x="300" y="682" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" letter-spacing="1.5" fill="#18181B" opacity="0.85">UNISEX ESSENTIALS</text>
+  <text x="300" y="706" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="11" letter-spacing="2.5" fill="#18181B" opacity="0.45">SUSTAINABLE ARCHIVE</text>
+</svg>
