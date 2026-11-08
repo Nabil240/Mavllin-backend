@@ -55,12 +55,18 @@ FRONTEND_CANDIDATES=(
   "Mavllin-frontend"
   "Mavliin-frontend"
   "Mavllin-fontend"
+  "Mavliin_fontend"
+  "Mavllin_frontend"
+  "project-eco-frontend"
 )
 
 BACKEND_CANDIDATES=(
   "${BACKEND_REPO:-}"
   "Mavllin-backend"
   "Mavliin-backend"
+  "Mavllin_backend"
+  "Mavliin_backend"
+  "project-eco-backend"
 )
 
 echo "=========================================================="
@@ -69,13 +75,37 @@ echo " Target GitHub Account: https://github.com/${GITHUB_USER}"
 [ "${DRY_RUN}" = true ] && echo " MODE: DRY RUN (No changes will be pushed)"
 echo "=========================================================="
 
+# Safe branch reference updater that respects the currently checked-out branch
+update_branch_ref() {
+  local branch="$1"
+  local commit_sha="$2"
+  local current_branch
+  current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)
+  if [ "${current_branch}" = "${branch}" ]; then
+    git reset --hard "${commit_sha}" >/dev/null 2>&1
+  else
+    git branch -f "${branch}" "${commit_sha}"
+  fi
+}
+
 # ------------------------------------------------------------------------------
-# 1. Synchronize Release Branches from Current Monorepo HEAD
+# 1. Synchronize Release Branches from Current Monorepo HEAD / main
 # ------------------------------------------------------------------------------
 echo "[1/4] Synchronizing release branches from current HEAD..."
 
+# Determine monorepo root tree reference (fallback to 'main' if on a split branch)
+MONO_REF="HEAD"
+if ! git rev-parse --verify "${MONO_REF}:frontend" >/dev/null 2>&1; then
+  if git rev-parse --verify "main:frontend" >/dev/null 2>&1; then
+    MONO_REF="main"
+  else
+    echo "[-] Error: Unable to locate 'frontend' tree in HEAD or main." >&2
+    exit 1
+  fi
+fi
+
 # Synchronize frontend-main (pure frontend/ directory tree at repository root)
-TREE_FRONTEND=$(git rev-parse HEAD:frontend)
+TREE_FRONTEND=$(git rev-parse "${MONO_REF}:frontend")
 CURRENT_FE_TREE=""
 if git rev-parse --verify frontend-main >/dev/null 2>&1; then
   CURRENT_FE_TREE=$(git rev-parse frontend-main^{tree} 2>/dev/null || true)
@@ -87,15 +117,15 @@ if [ "${CURRENT_FE_TREE}" != "${TREE_FRONTEND}" ]; then
     PARENT_ARG="-p frontend-main"
   fi
   COMMIT_FE=$(git commit-tree "${TREE_FRONTEND}" ${PARENT_ARG} -m "feat: release MAVLLIN storefront application")
-  git branch -f frontend-main "${COMMIT_FE}"
+  update_branch_ref frontend-main "${COMMIT_FE}"
   echo "      -> frontend-main updated (commit ${COMMIT_FE:0:7})"
 else
-  echo "      -> frontend-main is already up to date with HEAD:frontend."
+  echo "      -> frontend-main is already up to date with ${MONO_REF}:frontend."
 fi
 
 # Synchronize backend-main (all backend, database, docker, test files; frontend excluded)
 TEMP_INDEX=$(mktemp -t git_backend_idx.XXXXXX)
-GIT_INDEX_FILE="${TEMP_INDEX}" git read-tree HEAD
+GIT_INDEX_FILE="${TEMP_INDEX}" git read-tree "${MONO_REF}"
 GIT_INDEX_FILE="${TEMP_INDEX}" git rm -r --cached frontend >/dev/null 2>&1 || true
 TREE_BACKEND=$(GIT_INDEX_FILE="${TEMP_INDEX}" git write-tree)
 rm -f "${TEMP_INDEX}"
@@ -110,13 +140,13 @@ if [ "${CURRENT_BE_TREE}" != "${TREE_BACKEND}" ]; then
   if git rev-parse --verify backend-main >/dev/null 2>&1; then
     PARENT_ARG="-p backend-main"
   else
-    PARENT_ARG="-p HEAD"
+    PARENT_ARG="-p ${MONO_REF}"
   fi
   COMMIT_BE=$(git commit-tree "${TREE_BACKEND}" ${PARENT_ARG} -m "feat: release MAVLLIN backend and database services")
-  git branch -f backend-main "${COMMIT_BE}"
+  update_branch_ref backend-main "${COMMIT_BE}"
   echo "      -> backend-main updated (commit ${COMMIT_BE:0:7})"
 else
-  echo "      -> backend-main is already up to date with current HEAD."
+  echo "      -> backend-main is already up to date with ${MONO_REF}."
 fi
 
 # ------------------------------------------------------------------------------
@@ -134,6 +164,9 @@ if [ -n "${TOKEN}" ]; then
     AUTH_USER=$(echo "${USER_API_HEADER}" | grep -o '"login": *"[^"]*"' | head -n 1 | cut -d'"' -f4)
     echo "      [✔] Authenticated via Token as GitHub user: @${AUTH_USER}"
     AUTH_MODE="TOKEN"
+    if [ "${AUTH_USER,,}" != "${GITHUB_USER,,}" ]; then
+      echo "      [!] Notice: Token user @${AUTH_USER} differs from target account @${GITHUB_USER}." >&2
+    fi
   else
     echo "      [x] Error: Personal Access Token rejected by GitHub (HTTP ${HTTP_STATUS:-connection error})." >&2
     echo "          Please check your token at https://github.com/settings/tokens (requires 'repo' scope)." >&2
@@ -183,8 +216,30 @@ if [ -z "${AUTH_MODE}" ]; then
 fi
 
 # ------------------------------------------------------------------------------
-# 3. Helper: Push or Create Repository with Candidate Slugs
+# 3. Helper: Check Existing Repositories and Push Release Branches
 # ------------------------------------------------------------------------------
+check_repo_exists() {
+  local slug="$1"
+  if [ "${AUTH_MODE}" = "TOKEN" ]; then
+    local status
+    status=$(curl -s -o /dev/null -w "%{http_code}" \
+      -H "Authorization: token ${TOKEN}" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/${GITHUB_USER}/${slug}" || true)
+    [ "${status}" = "200" ] && return 0
+    return 1
+  else
+    local status
+    status=$(curl -s -o /dev/null -w "%{http_code}" \
+      "https://api.github.com/repos/${GITHUB_USER}/${slug}" || true)
+    [ "${status}" = "200" ] && return 0
+    status=$(curl -s -o /dev/null -w "%{http_code}" \
+      "https://github.com/${GITHUB_USER}/${slug}" || true)
+    [ "${status}" = "200" ] && return 0
+    return 1
+  fi
+}
+
 # NOTE: All diagnostic output in this function MUST be redirected to stderr (>&2)
 # so command substitution $(push_branch_with_slugs ...) captures ONLY the slug.
 push_branch_with_slugs() {
@@ -195,21 +250,37 @@ push_branch_with_slugs() {
   local candidates=("$@")
   local success_slug=""
 
+  # Step A: Pre-flight scan across candidates to detect pre-existing repositories
+  echo "      Scanning candidate repositories on https://github.com/${GITHUB_USER}..." >&2
+  local existing_slug=""
   for slug in "${candidates[@]}"; do
     [ -z "${slug}" ] && continue
+    if check_repo_exists "${slug}"; then
+      existing_slug="${slug}"
+      echo "      [✔] Detected pre-existing repository on GitHub: ${GITHUB_USER}/${existing_slug}" >&2
+      break
+    fi
+  done
 
+  # Order candidate exploration: prioritize pre-existing repository if detected
+  local slugs_to_try=()
+  if [ -n "${existing_slug}" ]; then
+    slugs_to_try=("${existing_slug}")
+  else
+    for slug in "${candidates[@]}"; do
+      [ -n "${slug}" ] && slugs_to_try+=("${slug}")
+    done
+  fi
+
+  for slug in "${slugs_to_try[@]}"; do
     echo "      Trying repository slug: ${slug}..." >&2
 
-    # If using token, check if repo exists on GitHub; auto-create if missing
-    if [ "${AUTH_MODE}" = "TOKEN" ]; then
-      local check_status
-      check_status=$(curl -s -o /dev/null -w "%{http_code}" \
-        -H "Authorization: token ${TOKEN}" \
-        -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${GITHUB_USER}/${slug}" || true)
-
-      if [ "${check_status}" = "404" ]; then
-        echo "        Repo '${slug}' does not exist on GitHub. Creating it now..." >&2
+    # If using token and repo does not exist on GitHub, auto-create repository
+    if [ "${AUTH_MODE}" = "TOKEN" ] && [ "${existing_slug}" != "${slug}" ]; then
+      if [ "${DRY_RUN}" = true ]; then
+        echo "        [DRY-RUN] Repository '${slug}' does not exist on GitHub (would create via REST API)." >&2
+      else
+        echo "        Repo '${slug}' does not exist on GitHub. Creating it now via REST API..." >&2
         local create_status
         create_status=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
           -H "Authorization: token ${TOKEN}" \
@@ -243,9 +314,14 @@ push_branch_with_slugs() {
       break
     else
       echo "      [x] Slug '${slug}' push failed:" >&2
+      # Sanitize sensitive token from git diagnostic output
+      local sanitized_output="${push_output}"
+      if [ -n "${TOKEN}" ]; then
+        sanitized_output="${push_output//"$TOKEN"/"[REDACTED_TOKEN]"}"
+      fi
       while IFS= read -r line; do
         [ -n "${line}" ] && echo "          ${line}" >&2
-      done <<< "${push_output}"
+      done <<< "${sanitized_output}"
     fi
   done
 
@@ -254,6 +330,15 @@ push_branch_with_slugs() {
     for s in "${candidates[@]}"; do
       [ -n "${s}" ] && echo "    - ${s}" >&2
     done
+    if [ "${AUTH_MODE}" = "SSH" ]; then
+      local primary_slug="${candidates[1]:-${candidates[0]}}"
+      echo "" >&2
+      echo "    [ACTION] If the repository does not exist yet on GitHub, please create it at:" >&2
+      echo "             https://github.com/new" >&2
+      echo "             Repository name: ${primary_slug}" >&2
+      echo "             Visibility:      Public" >&2
+      echo "             Then re-run:     bash scripts/push-to-github.sh" >&2
+    fi
     return 1
   fi
 
@@ -292,7 +377,7 @@ if [ "${DRY_RUN}" = false ]; then
   # Primary remotes
   git remote set-url backend "${BE_PRIMARY}" 2>/dev/null || git remote add backend "${BE_PRIMARY}"
   git remote set-url frontend "${FE_PRIMARY}" 2>/dev/null || git remote add frontend "${FE_PRIMARY}"
-  git remote set-url origin "${BE_PRIMARY}" 2>/dev/null || true
+  git remote set-url origin "${BE_PRIMARY}" 2>/dev/null || git remote add origin "${BE_PRIMARY}"
 
   # Protocol-specific remotes
   git remote set-url backend-ssh "git@github.com:${GITHUB_USER}/${BACKEND_SUCCESS}.git" 2>/dev/null || git remote add backend-ssh "git@github.com:${GITHUB_USER}/${BACKEND_SUCCESS}.git"
@@ -308,7 +393,12 @@ fi
 
 echo ""
 echo "=========================================================="
-echo " [✔] MAVLLIN DUAL-REPOSITORY DEPLOYMENT COMPLETED!"
+if [ "${DRY_RUN}" = true ]; then
+  echo " [✔] MAVLLIN DUAL-REPOSITORY DRY-RUN VALIDATED!"
+  echo " Mode: DRY RUN (No remote branches were modified)"
+else
+  echo " [✔] MAVLLIN DUAL-REPOSITORY DEPLOYMENT COMPLETED!"
+fi
 echo "=========================================================="
 echo " Frontend Storefront Repository:"
 echo "   https://github.com/${GITHUB_USER}/${FRONTEND_SUCCESS}"
