@@ -174,7 +174,8 @@ if [ -n "${TOKEN}" ]; then
   fi
 else
   # Probe SSH with 5s timeout and batch mode
-  if ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 git@github.com 2>&1 | grep -iq "successfully authenticated"; then
+  SSH_PROBE_OUT=$(ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 git@github.com 2>&1 || true)
+  if echo "${SSH_PROBE_OUT}" | grep -iq "successfully authenticated"; then
     AUTH_MODE="SSH"
     echo "      -> Using verified SSH key authentication (${SSH_KEY})."
   fi
