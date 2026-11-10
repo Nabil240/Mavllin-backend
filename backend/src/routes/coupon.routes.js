@@ -24,6 +24,53 @@ router.get('/', authenticate, requireRole('admin'), asyncHandler(CouponControlle
 router.get('/analytics', authenticate, requireRole('admin'), asyncHandler(CouponController.getAnalytics));
 router.get('/member-usage', authenticate, requireRole('admin'), asyncHandler(CouponController.getMemberUsage));
 router.get(
+  '/:id/members',
+  authenticate,
+  requireRole('admin', 'staff'),
+  [param('id').isInt().withMessage('Coupon ID must be an integer'), validateRequest],
+  asyncHandler(CouponController.getMembers)
+);
+
+router.post(
+  '/:id/members',
+  authenticate,
+  requireRole('admin'),
+  [
+    param('id').isInt().withMessage('Coupon ID must be an integer'),
+    body('user_id').optional().isInt({ min: 1 }),
+    body('email').optional().isEmail(),
+    body('usage_limit').optional().isInt({ min: 1 }),
+    validateRequest,
+  ],
+  asyncHandler(CouponController.addMember)
+);
+
+router.put(
+  '/:id/members/:userId',
+  authenticate,
+  requireRole('admin'),
+  [
+    param('id').isInt().withMessage('Coupon ID must be an integer'),
+    param('userId').isInt().withMessage('User ID must be an integer'),
+    body('usage_limit').isInt({ min: 1 }).withMessage('usage_limit must be an integer >= 1'),
+    validateRequest,
+  ],
+  asyncHandler(CouponController.updateMemberLimit)
+);
+
+router.delete(
+  '/:id/members/:userId',
+  authenticate,
+  requireRole('admin'),
+  [
+    param('id').isInt().withMessage('Coupon ID must be an integer'),
+    param('userId').isInt().withMessage('User ID must be an integer'),
+    validateRequest,
+  ],
+  asyncHandler(CouponController.removeMember)
+);
+
+router.get(
   '/:id',
   authenticate,
   requireRole('admin'),

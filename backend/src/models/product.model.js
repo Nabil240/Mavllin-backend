@@ -346,6 +346,10 @@ const ProductModel = {
   },
 
   async create(productData, variants = []) {
+    if ((!variants || variants.length === 0) && Array.isArray(productData.variants)) {
+      variants = productData.variants;
+    }
+
     const connection = await pool.getConnection();
 
     try {
@@ -375,13 +379,18 @@ const ProductModel = {
       }
 
       const primarySku = productData.sku || (variants[0] ? variants[0].sku : null);
+      const baseCost = (productData.base_cost !== undefined && productData.base_cost !== null && !isNaN(Number(productData.base_cost)))
+        ? Number(productData.base_cost)
+        : (productData.baseCost !== undefined && productData.baseCost !== null && !isNaN(Number(productData.baseCost)))
+          ? Number(productData.baseCost)
+          : null;
 
       const [prodResult] = await connection.query(
         `INSERT INTO products (
-          category_id, name, slug, sku, short_description, description,
+          category_id, name, slug, sku, short_description, description, base_cost,
           base_price, price, discount_price, discount_type, discount_value, advance_payment_type,
           thumbnail_url, is_featured, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           productData.category_id || null,
           productData.name,
@@ -389,6 +398,7 @@ const ProductModel = {
           primarySku,
           productData.short_description || null,
           productData.description || null,
+          baseCost,
           basePrice || 0,
           basePrice || 0,
           productData.discount_price || null,
@@ -454,6 +464,10 @@ const ProductModel = {
   },
 
   async update(id, fields) {
+    if (fields.baseCost !== undefined && fields.base_cost === undefined) {
+      fields.base_cost = fields.baseCost;
+    }
+
     const allowed = [
       'category_id',
       'name',
@@ -461,6 +475,7 @@ const ProductModel = {
       'sku',
       'short_description',
       'description',
+      'base_cost',
       'base_price',
       'price',
       'discount_price',

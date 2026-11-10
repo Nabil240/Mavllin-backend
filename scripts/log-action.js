@@ -4,7 +4,6 @@ const path = require('path');
 
 const projectRoot = path.resolve(__dirname, '..');
 const planFiles = [
-  path.join(projectRoot, 'Plan.md'),
   path.join(projectRoot, 'plan.md')
 ];
 
@@ -18,14 +17,6 @@ const timestamp = new Date().toISOString();
 const header = '\n\n## Project Action & Command Execution Log\n\n| Timestamp (UTC) | Agent / Actor | Action / Command | Scope / Files Modified | Rationale / Outcome |\n|---|---|---|---|---|';
 const row = `\n| ${timestamp} | ${actor} | \`${command.replace(/`/g, "'")}\` | \`${files.replace(/`/g, "'")}\` | ${rationale.replace(/\|/g, '-')} |`;
 
-// Ensure both files exist and are synced
-const [planUpper, planLower] = planFiles;
-if (fs.existsSync(planLower) && !fs.existsSync(planUpper)) {
-  fs.copyFileSync(planLower, planUpper);
-} else if (fs.existsSync(planUpper) && !fs.existsSync(planLower)) {
-  fs.copyFileSync(planUpper, planLower);
-}
-
 for (const filePath of planFiles) {
   let content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
   if (!content.includes('## Project Action & Command Execution Log')) {
@@ -35,4 +26,4 @@ for (const filePath of planFiles) {
   fs.writeFileSync(filePath, content, 'utf8');
 }
 
-console.log(`[Plan.md / plan.md Synced] ${row.trim()}`);
+console.log(`[plan.md Logged] ${row.trim()}`);

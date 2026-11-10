@@ -1,6 +1,7 @@
 const ProductModel = require('../models/product.model');
 const { sendSuccess, sendError } = require('../utils/apiResponse');
 const { slugify, paginate } = require('../utils/helpers');
+const { calculateDiscount, calculatePricingOverview, calculateOptimalPrice } = require('../utils/pricing.util');
 
 function normalizeAdvancePaymentType(val) {
   if (!val) return 'none';
@@ -19,9 +20,11 @@ function resolveDiscountData(basePrice, discountType, discountValue, discountPri
   let price = discountPrice !== undefined && discountPrice !== null ? Number(discountPrice) : null;
 
   if (type === 'percentage' && val > 0) {
-    price = parseFloat((basePrice * (1.0 - val / 100.0)).toFixed(2));
+    const discount = calculateDiscount(basePrice, 'percentage', val);
+    price = discount.final_price;
   } else if (type === 'fixed' && val > 0) {
-    price = Math.max(0, parseFloat((basePrice - val).toFixed(2)));
+    const discount = calculateDiscount(basePrice, 'fixed', val);
+    price = discount.final_price;
   } else if (price !== null && price > 0 && price < basePrice && type === 'none') {
     type = 'fixed';
     val = parseFloat((basePrice - price).toFixed(2));
@@ -363,6 +366,37 @@ const ProductController = {
       message: 'Product image deleted successfully',
     });
   },
+
+  calculatePricing(req, res) {
+    const {
+      baseCost,
+      marginPercentage,
+      sellingPrice,
+      discountType,
+      discountValue,
+      base_cost,
+      margin_percentage,
+      selling_price,
+      discount_type,
+      discount_value,
+    } = req.body || {};
+
+    const overview = calculatePricingOverview({
+      baseCost: baseCost !== undefined ? baseCost : base_cost,
+      marginPercentage: marginPercentage !== undefined ? marginPercentage : margin_percentage,
+      sellingPrice: sellingPrice !== undefined ? sellingPrice : selling_price,
+      discountType: discountType !== undefined ? discountType : discount_type,
+      discountValue: discountValue !== undefined ? discountValue : discount_value,
+    });
+
+    return sendSuccess(res, {
+      statusCode: 200,
+      message: 'Pricing calculated successfully',
+      data: overview,
+    });
+  },
 };
+
+ProductController.resolveDiscountData = resolveDiscountData;
 
 module.exports = ProductController;

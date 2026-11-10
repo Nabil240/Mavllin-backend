@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS products (
   sku VARCHAR(100) DEFAULT NULL,
   short_description VARCHAR(500) DEFAULT NULL,
   description LONGTEXT DEFAULT NULL,
+  base_cost DECIMAL(10, 2) DEFAULT NULL,
   base_price DECIMAL(10, 2) NOT NULL,
   price DECIMAL(10, 2) DEFAULT NULL,
   discount_price DECIMAL(10, 2) DEFAULT NULL,
@@ -146,6 +147,22 @@ CREATE TABLE IF NOT EXISTS coupons (
   INDEX idx_coupons_code (code),
   INDEX idx_coupons_active (is_active)
 ) ENGINE=InnoDB;
+
+-- 7b. Coupon Member Whitelist & Custom Usage Limits
+CREATE TABLE IF NOT EXISTS coupon_members (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  coupon_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  usage_limit INT UNSIGNED NOT NULL DEFAULT 1,
+  used_count INT UNSIGNED NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_coupon_member (coupon_id, user_id),
+  INDEX idx_cm_coupon (coupon_id),
+  INDEX idx_cm_user (user_id),
+  CONSTRAINT fk_cm_coupon FOREIGN KEY (coupon_id) REFERENCES coupons(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cm_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 8. Orders (Supports Registered Customer & Guest Checkout)
 CREATE TABLE IF NOT EXISTS orders (

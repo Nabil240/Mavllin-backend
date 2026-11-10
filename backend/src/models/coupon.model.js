@@ -115,6 +115,168 @@ const CouponModel = {
     await db.query('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?', [id]);
   },
 
+  async getMembers(couponId) {
+    const [rows] = await pool.query(
+      `SELECT 
+         cm.id,
+         cm.coupon_id,
+         cm.user_id,
+         cm.usage_limit,
+         cm.used_count,
+         GREATEST(0, CAST(cm.usage_limit AS SIGNED) - CAST(cm.used_count AS SIGNED)) AS remaining_uses,
+         u.full_name AS customer_name,
+         u.email AS customer_email,
+         u.phone AS customer_phone,
+         cm.created_at,
+         cm.updated_at
+       FROM coupon_members cm
+       JOIN users u ON u.id = cm.user_id
+       WHERE cm.coupon_id = ?
+       ORDER BY cm.created_at DESC`,
+      [couponId]
+    );
+    return rows.map(r => ({
+      ...r,
+      usage_limit: Number(r.usage_limit),
+      used_count: Number(r.used_count),
+      remaining_uses: Number(r.remaining_uses),
+    }));
+  },
+
+  async getMemberCount(couponId, connection = null) {
+    const db = connection || pool;
+    const [rows] = await db.query(
+      'SELECT COUNT(*) AS total FROM coupon_members WHERE coupon_id = ?',
+      [couponId]
+    );
+    return Number(rows[0]?.total || 0);
+  },
+
+  async getMemberUsage(couponId, userId, connection = null, forUpdate = false) {
+    const db = connection || pool;
+    const lockClause = forUpdate ? ' FOR UPDATE' : '';
+    const [rows] = await db.query(
+      `SELECT 
+         cm.id,
+         cm.coupon_id,
+         cm.user_id,
+         cm.usage_limit,
+         cm.used_count,
+         GREATEST(0, CAST(cm.usage_limit AS SIGNED) - CAST(cm.used_count AS SIGNED)) AS remaining_uses,
+         u.full_name AS customer_name,
+         u.email AS customer_email,
+         u.phone AS customer_phone,
+         cm.created_at,
+         cm.updated_at
+       FROM coupon_members cm
+       JOIN users u ON u.id = cm.user_id
+       WHERE cm.coupon_id = ? AND cm.user_id = ? LIMIT 1${lockClause}`,
+      [couponId, userId]
+    );
+    if (!rows[0]) return null;
+    return {
+      ...rows[0],
+      usage_limit: Number(rows[0].usage_limit),
+      used_count: Number(rows[0].used_count),
+      remaining_uses: Number(rows[0].remaining_uses),
+    };
+  },
+
+  async getMemberAssignment(couponId, userId, connection = null, forUpdate = false) {
+    return this.getMemberUsage(couponId, userId, connection, forUpdate);
+  },
+
+  async addMember(couponId, { userId, user_id, usageLimit, usage_limit } = {}) {
+    const effectiveUserId = userId || user_id;
+    const effectiveLimit = Math.max(1, parseInt(usageLimit || usage_limit || 1, 10) || 1);
+
+    if (!effectiveUserId) {
+      const err = new Error('User ID is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Verify user exists
+    const [userRows] = await pool.query('SELECT id, full_name, email FROM users WHERE id = ?', [effectiveUserId]);
+    if (!userRows[0]) {
+      const err = new Error('User not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    // Check if member is already assigned to this coupon
+    const [existing] = await pool.query(
+      'SELECT id FROM coupon_members WHERE coupon_id = ? AND user_id = ?',
+      [couponId, effectiveUserId]
+    );
+    if (existing[0]) {
+      const err = new Error('Member is already whitelisted for this coupon');
+      err.statusCode = 409;
+      throw err;
+    }
+
+    await pool.query(
+      `INSERT INTO coupon_members (coupon_id, user_id, usage_limit, used_count)
+       VALUES (?, ?, ?, 0)`,
+      [couponId, effectiveUserId, effectiveLimit]
+    );
+
+    return this.getMemberUsage(couponId, effectiveUserId);
+  },
+
+  async addMemberByEmail(couponId, { email, usageLimit, usage_limit } = {}) {
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      const err = new Error('Email is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const [userRows] = await pool.query('SELECT id, full_name, email FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1', [email.trim()]);
+    if (!userRows[0]) {
+      const err = new Error('User not found');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    return this.addMember(couponId, { userId: userRows[0].id, usageLimit: usageLimit || usage_limit });
+  },
+
+  async updateMemberLimit(couponId, userId, usageLimit) {
+    const effectiveLimit = Math.max(1, parseInt(usageLimit, 10) || 1);
+    const [existing] = await pool.query(
+      'SELECT id FROM coupon_members WHERE coupon_id = ? AND user_id = ?',
+      [couponId, userId]
+    );
+    if (!existing[0]) {
+      const err = new Error('Member is not on the coupon whitelist');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    await pool.query(
+      'UPDATE coupon_members SET usage_limit = ? WHERE coupon_id = ? AND user_id = ?',
+      [effectiveLimit, couponId, userId]
+    );
+
+    return this.getMemberUsage(couponId, userId);
+  },
+
+  async removeMember(couponId, userId) {
+    const [result] = await pool.query(
+      'DELETE FROM coupon_members WHERE coupon_id = ? AND user_id = ?',
+      [couponId, userId]
+    );
+    return result.affectedRows > 0;
+  },
+
+  async incrementMemberUsage(couponId, userId, connection = null) {
+    const db = connection || pool;
+    await db.query(
+      'UPDATE coupon_members SET used_count = used_count + 1 WHERE coupon_id = ? AND user_id = ?',
+      [couponId, userId]
+    );
+  },
+
   async getAnalytics() {
     // 1. Overall high-level statistics
     const [overallRows] = await pool.query(`

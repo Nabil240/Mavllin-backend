@@ -12,7 +12,35 @@ const DashboardModel = {
         (SELECT COUNT(*) FROM users WHERE role = 'customer') AS total_customers,
         (SELECT COUNT(*) FROM product_variants pv JOIN products p ON pv.product_id = p.id WHERE pv.stock_quantity <= 5 AND pv.is_active = 1 AND p.is_active = 1) AS low_stock_count,
         (SELECT COUNT(*) FROM product_variants pv JOIN products p ON pv.product_id = p.id WHERE pv.stock_quantity = 0 AND pv.is_active = 1 AND p.is_active = 1) AS out_of_stock_count,
-        (SELECT COUNT(*) FROM orders WHERE status = 'pending') AS pending_orders
+        (SELECT COUNT(*) FROM orders WHERE status = 'pending') AS pending_orders,
+        (
+          SELECT COALESCE(SUM(
+            COALESCE(p.base_cost, p.base_price, pv.price, 0) * GREATEST(0, pv.stock_quantity)
+          ), 0)
+          FROM product_variants pv
+          JOIN products p ON pv.product_id = p.id
+          WHERE pv.is_active = 1 AND p.is_active = 1
+        ) AS total_investment,
+        (
+          SELECT COALESCE(
+            (
+              SELECT COALESCE(SUM(total_amount), 0)
+              FROM orders
+              WHERE status != 'cancelled' AND payment_status = 'paid'
+            )
+            -
+            (
+              SELECT COALESCE(SUM(
+                oi.quantity * COALESCE(p.base_cost, p.base_price, oi.unit_price, 0)
+              ), 0)
+              FROM order_items oi
+              JOIN orders o ON oi.order_id = o.id
+              LEFT JOIN products p ON oi.product_id = p.id
+              WHERE o.status != 'cancelled' AND o.payment_status = 'paid'
+            ),
+            0
+          )
+        ) AS realized_profit
     `);
 
     return stats[0];

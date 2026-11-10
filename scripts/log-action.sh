@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# scripts/log-action.sh — Synchronized Project Action Logger for Plan.md & plan.md
+# scripts/log-action.sh — Project Action Logger for plan.md
 # ==============================================================================
 set -euo pipefail
 

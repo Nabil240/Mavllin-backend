@@ -23,6 +23,31 @@ const CouponController = {
       });
     }
 
+    let memberAssignment = null;
+    if (!coupon.is_universal) {
+      const memberCount = await CouponModel.getMemberCount(coupon.id);
+      if (memberCount > 0) {
+        memberAssignment = await CouponModel.getMemberUsage(coupon.id, req.user.id);
+        if (!memberAssignment) {
+          return sendError(res, {
+            statusCode: 403,
+            message: 'This coupon is restricted to specific eligible members.',
+          });
+        }
+
+        if (memberAssignment.usage_limit !== null && memberAssignment.used_count >= memberAssignment.usage_limit) {
+          return sendError(res, {
+            statusCode: 400,
+            message: 'You have reached your usage limit for this coupon.',
+          });
+        }
+      } else if (req.user && req.user.id) {
+        memberAssignment = await CouponModel.getMemberUsage(coupon.id, req.user.id);
+      }
+    } else if (req.user && req.user.id) {
+      memberAssignment = await CouponModel.getMemberUsage(coupon.id, req.user.id);
+    }
+
     const result = CouponModel.calculateDiscount(coupon, subtotal || 0);
     if (!result.valid) {
       return sendError(res, { statusCode: 400, message: result.message });
@@ -37,6 +62,14 @@ const CouponController = {
         discount_amount: result.discount,
         coupon_id: coupon.id,
         is_universal: Boolean(coupon.is_universal),
+        member_usage: memberAssignment ? {
+          usage_limit: memberAssignment.usage_limit,
+          used_count: memberAssignment.used_count,
+          remaining_uses: memberAssignment.remaining_uses,
+        } : null,
+        member_usage_limit: memberAssignment ? memberAssignment.usage_limit : null,
+        member_used_count: memberAssignment ? memberAssignment.used_count : null,
+        member_remaining_uses: memberAssignment ? memberAssignment.remaining_uses : null,
       },
     });
   },
@@ -177,6 +210,109 @@ const CouponController = {
     return sendSuccess(res, {
       statusCode: 200,
       message: 'Coupon deleted successfully',
+    });
+  },
+
+  async getMembers(req, res) {
+    const { id } = req.params;
+    const coupon = await CouponModel.findById(id);
+    if (!coupon) {
+      return sendError(res, { statusCode: 404, message: 'Coupon not found' });
+    }
+
+    const members = await CouponModel.getMembers(id);
+    return sendSuccess(res, {
+      message: 'Coupon members retrieved successfully',
+      data: members,
+    });
+  },
+
+  async addMember(req, res) {
+    const { id } = req.params;
+    const coupon = await CouponModel.findById(id);
+    if (!coupon) {
+      return sendError(res, { statusCode: 404, message: 'Coupon not found' });
+    }
+
+    const { user_id, userId, email, usage_limit, usageLimit } = req.body;
+    const effectiveLimit = usage_limit || usageLimit || 1;
+
+    try {
+      let member;
+      if (email) {
+        member = await CouponModel.addMemberByEmail(id, { email, usage_limit: effectiveLimit });
+      } else if (user_id || userId) {
+        member = await CouponModel.addMember(id, { userId: user_id || userId, usage_limit: effectiveLimit });
+      } else {
+        return sendError(res, {
+          statusCode: 400,
+          message: 'User ID or email is required to assign member',
+        });
+      }
+
+      return sendSuccess(res, {
+        statusCode: 201,
+        message: 'Member assigned to coupon whitelist successfully',
+        data: member,
+      });
+    } catch (err) {
+      return sendError(res, {
+        statusCode: err.statusCode || 400,
+        message: err.message || 'Failed to assign member to coupon whitelist',
+      });
+    }
+  },
+
+  async updateMemberLimit(req, res) {
+    const { id, userId } = req.params;
+    const coupon = await CouponModel.findById(id);
+    if (!coupon) {
+      return sendError(res, { statusCode: 404, message: 'Coupon not found' });
+    }
+
+    const { usage_limit, usageLimit } = req.body;
+    const effectiveLimit = usage_limit !== undefined ? usage_limit : usageLimit;
+
+    if (effectiveLimit === undefined || effectiveLimit === null) {
+      return sendError(res, {
+        statusCode: 400,
+        message: 'usage_limit is required',
+      });
+    }
+
+    try {
+      const updated = await CouponModel.updateMemberLimit(id, userId, effectiveLimit);
+      return sendSuccess(res, {
+        statusCode: 200,
+        message: 'Member usage limit updated successfully',
+        data: updated,
+      });
+    } catch (err) {
+      return sendError(res, {
+        statusCode: err.statusCode || 400,
+        message: err.message || 'Failed to update member usage limit',
+      });
+    }
+  },
+
+  async removeMember(req, res) {
+    const { id, userId } = req.params;
+    const coupon = await CouponModel.findById(id);
+    if (!coupon) {
+      return sendError(res, { statusCode: 404, message: 'Coupon not found' });
+    }
+
+    const removed = await CouponModel.removeMember(id, userId);
+    if (!removed) {
+      return sendError(res, {
+        statusCode: 404,
+        message: 'Member is not on the coupon whitelist',
+      });
+    }
+
+    return sendSuccess(res, {
+      statusCode: 200,
+      message: 'Member removed from coupon whitelist successfully',
     });
   },
 };

@@ -887,23 +887,19 @@ describe('Milestone 1 Challenger Empirical Verification: Adversarial Stress Test
   // =========================================================================
   // SECTION 4: Action Logging Synchronization Verification
   // =========================================================================
-  describe('4. Action Logging in Plan.md Verification', () => {
+  describe('4. Action Logging in plan.md Verification', () => {
     const fs = require('fs');
     const path = require('path');
 
-    it('verifies Plan.md and plan.md exist and contain synchronized action logs', () => {
-      const planUpper = path.resolve(__dirname, '../../Plan.md');
+    it('verifies plan.md exists and contains the action log', () => {
       const planLower = path.resolve(__dirname, '../../plan.md');
 
-      assert.ok(fs.existsSync(planUpper), 'Plan.md must exist');
       assert.ok(fs.existsSync(planLower), 'plan.md must exist');
 
-      const upperContent = fs.readFileSync(planUpper, 'utf8');
       const lowerContent = fs.readFileSync(planLower, 'utf8');
 
-      assert.ok(upperContent.includes('## Project Action & Command Execution Log'), 'Plan.md must contain Action Log table');
       assert.ok(lowerContent.includes('## Project Action & Command Execution Log'), 'plan.md must contain Action Log table');
-      assert.ok(upperContent.includes('worker_m1_iter1_1'), 'Plan.md must record worker actions');
+      assert.ok(lowerContent.includes('worker_m1_iter1_1'), 'plan.md must record worker actions');
     });
   });
 });

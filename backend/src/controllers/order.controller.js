@@ -244,6 +244,25 @@ const OrderController = {
     if (coupon_code) {
       const coupon = await CouponModel.findByCode(coupon_code);
       if (coupon) {
+        if (!coupon.is_universal) {
+          const memberCount = await CouponModel.getMemberCount(coupon.id);
+          if (memberCount > 0) {
+            const memberAssignment = await CouponModel.getMemberUsage(coupon.id, userId);
+            if (!memberAssignment) {
+              return sendError(res, {
+                statusCode: 403,
+                message: 'This coupon is restricted to specific eligible members.',
+              });
+            }
+            if (memberAssignment.usage_limit !== null && memberAssignment.used_count >= memberAssignment.usage_limit) {
+              return sendError(res, {
+                statusCode: 400,
+                message: 'You have reached your usage limit for this coupon.',
+              });
+            }
+          }
+        }
+
         const couponCheck = CouponModel.calculateDiscount(coupon, subtotal);
         if (couponCheck.valid) {
           discountAmount = couponCheck.discount;
@@ -300,31 +319,39 @@ const OrderController = {
       }
     }
 
-    const orderId = await OrderModel.createWithTransaction({
-      orderData: {
-        order_number: orderNumber,
-        user_id: userId,
-        subtotal,
-        discount_amount: discountAmount,
-        shipping_fee: shippingFee,
-        total_amount: totalAmount,
-        advance_amount: requiredAdvance,
-        due_amount: dueAmount,
-        advance_payment_status: requiredAdvance > 0 ? 'unpaid' : 'paid',
-        status: 'pending',
-        payment_method: normalizedPaymentMethod,
-        payment_status: isManualVerification ? 'unpaid' : 'paid',
-        shipping_address,
-        notes: effectiveNotes,
-      },
-      items: orderItems,
-      paymentData: {
-        provider,
-        status: isManualVerification ? 'pending' : 'succeeded',
-        transaction_id: formattedTrxId,
-      },
-      couponId,
-    });
+    let orderId;
+    try {
+      orderId = await OrderModel.createWithTransaction({
+        orderData: {
+          order_number: orderNumber,
+          user_id: userId,
+          subtotal,
+          discount_amount: discountAmount,
+          shipping_fee: shippingFee,
+          total_amount: totalAmount,
+          advance_amount: requiredAdvance,
+          due_amount: dueAmount,
+          advance_payment_status: requiredAdvance > 0 ? 'unpaid' : 'paid',
+          status: 'pending',
+          payment_method: normalizedPaymentMethod,
+          payment_status: isManualVerification ? 'unpaid' : 'paid',
+          shipping_address,
+          notes: effectiveNotes,
+        },
+        items: orderItems,
+        paymentData: {
+          provider,
+          status: isManualVerification ? 'pending' : 'succeeded',
+          transaction_id: formattedTrxId,
+        },
+        couponId,
+      });
+    } catch (err) {
+      if (err.statusCode) {
+        return sendError(res, { statusCode: err.statusCode, message: err.message });
+      }
+      throw err;
+    }
 
     const createdOrder = await OrderModel.findById(orderId);
 
@@ -485,33 +512,41 @@ const OrderController = {
       }
     }
 
-    const orderId = await OrderModel.createWithTransaction({
-      orderData: {
-        order_number: orderNumber,
-        user_id: null,
-        guest_email: guest_email || (shipping_address && shipping_address.email) || null,
-        guest_phone: (shipping_address && shipping_address.phone) || null,
-        subtotal,
-        discount_amount: discountAmount,
-        shipping_fee: shippingFee,
-        total_amount: totalAmount,
-        advance_amount: requiredAdvance,
-        due_amount: dueAmount,
-        advance_payment_status: requiredAdvance > 0 ? 'unpaid' : 'paid',
-        status: 'pending',
-        payment_method: normalizedPaymentMethod,
-        payment_status: isManualVerification ? 'unpaid' : 'paid',
-        shipping_address,
-        notes: effectiveNotes,
-      },
-      items: orderItems,
-      paymentData: {
-        provider,
-        status: isManualVerification ? 'pending' : 'succeeded',
-        transaction_id: formattedTrxId,
-      },
-      couponId,
-    });
+    let orderId;
+    try {
+      orderId = await OrderModel.createWithTransaction({
+        orderData: {
+          order_number: orderNumber,
+          user_id: null,
+          guest_email: guest_email || (shipping_address && shipping_address.email) || null,
+          guest_phone: (shipping_address && shipping_address.phone) || null,
+          subtotal,
+          discount_amount: discountAmount,
+          shipping_fee: shippingFee,
+          total_amount: totalAmount,
+          advance_amount: requiredAdvance,
+          due_amount: dueAmount,
+          advance_payment_status: requiredAdvance > 0 ? 'unpaid' : 'paid',
+          status: 'pending',
+          payment_method: normalizedPaymentMethod,
+          payment_status: isManualVerification ? 'unpaid' : 'paid',
+          shipping_address,
+          notes: effectiveNotes,
+        },
+        items: orderItems,
+        paymentData: {
+          provider,
+          status: isManualVerification ? 'pending' : 'succeeded',
+          transaction_id: formattedTrxId,
+        },
+        couponId,
+      });
+    } catch (err) {
+      if (err.statusCode) {
+        return sendError(res, { statusCode: err.statusCode, message: err.message });
+      }
+      throw err;
+    }
 
     const createdOrder = await OrderModel.findById(orderId);
 

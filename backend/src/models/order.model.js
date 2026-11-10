@@ -490,8 +490,65 @@ const OrderModel = {
         ]
       );
 
-      // 6. Increment coupon usage if applied
+      // 6. Validate and increment coupon usage if applied (Atomic Row Locking)
       if (couponId) {
+        const [coupRows] = await connection.query(
+          'SELECT * FROM coupons WHERE id = ? FOR UPDATE',
+          [couponId]
+        );
+        if (!coupRows[0] || !coupRows[0].is_active) {
+          const err = new Error('Coupon is inactive or invalid');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        const coup = coupRows[0];
+        if (coup.usage_limit !== null && coup.used_count >= coup.usage_limit) {
+          const err = new Error('Coupon usage limit reached');
+          err.statusCode = 400;
+          throw err;
+        }
+
+        if (!coup.is_universal) {
+          if (!orderData.user_id) {
+            const err = new Error(
+              'Coupons and promotional discounts are exclusively available to registered customers. Please log in or create an account to apply coupons.'
+            );
+            err.statusCode = 400;
+            throw err;
+          }
+
+          const [allMembers] = await connection.query(
+            'SELECT COUNT(*) AS cnt FROM coupon_members WHERE coupon_id = ?',
+            [couponId]
+          );
+
+          if (allMembers[0].cnt > 0) {
+            const [memberRows] = await connection.query(
+              'SELECT * FROM coupon_members WHERE coupon_id = ? AND user_id = ? FOR UPDATE',
+              [couponId, orderData.user_id]
+            );
+
+            if (!memberRows[0]) {
+              const err = new Error('This coupon is restricted to specific eligible members.');
+              err.statusCode = 403;
+              throw err;
+            }
+
+            const memberRec = memberRows[0];
+            if (memberRec.usage_limit !== null && memberRec.used_count >= memberRec.usage_limit) {
+              const err = new Error('You have reached your usage limit for this coupon.');
+              err.statusCode = 400;
+              throw err;
+            }
+
+            await connection.query(
+              'UPDATE coupon_members SET used_count = used_count + 1 WHERE coupon_id = ? AND user_id = ?',
+              [couponId, orderData.user_id]
+            );
+          }
+        }
+
         await connection.query('UPDATE coupons SET used_count = used_count + 1 WHERE id = ?', [couponId]);
       }
 
